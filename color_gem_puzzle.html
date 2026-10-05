@@ -1,0 +1,823 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>カラフルジェムパズル - Gem Drop Puzzle</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Fredoka+One&family=M+PLUS+Rounded+1c:wght@700;900&display=swap');
+        
+        body {
+            font-family: 'M PLUS Rounded 1c', 'Fredoka One', sans-serif;
+            touch-action: manipulation;
+            user-select: none;
+            -webkit-user-select: none;
+            overflow: hidden;
+        }
+
+        .btn-push {
+            transition: transform 0.05s ease, box-shadow 0.05s ease;
+        }
+        .btn-push:active {
+            transform: translateY(2px);
+            box-shadow: none !important;
+        }
+
+        #gameCanvas {
+            background-color: rgba(15, 23, 42, 0.9);
+            backdrop-filter: blur(8px);
+            border: 4px solid #334155;
+            border-radius: 16px;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.3);
+        }
+
+        @keyframes chainPopup {
+            0% { transform: scale(0.4) rotate(-10deg); opacity: 0; }
+            50% { transform: scale(1.25) rotate(4deg); opacity: 1; }
+            100% { transform: scale(1) rotate(0deg); opacity: 0; }
+        }
+        .chain-anim {
+            animation: chainPopup 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-white h-screen flex flex-col justify-between items-center p-2 select-none">
+
+    <header class="w-full max-w-md flex justify-between items-center px-3 py-1.5 z-10">
+        <div class="flex items-center gap-2">
+            <div class="w-9 h-9 rounded-2xl bg-gradient-to-tr from-pink-500 to-amber-400 flex items-center justify-center font-black text-xl shadow-md">💎</div>
+            <h1 class="text-xl md:text-2xl font-black tracking-wide text-transparent bg-clip-text bg-gradient-to-r from-pink-400 via-amber-300 to-cyan-400">
+                ジェムパズル
+            </h1>
+        </div>
+        <div class="flex gap-2">
+            <button id="soundToggleBtn" class="bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-slate-300 p-2 rounded-xl text-sm border border-slate-700 flex items-center justify-center w-10 h-10 shadow">
+                <i class="fas fa-volume-up" id="soundIcon"></i>
+            </button>
+            <button id="pauseBtn" class="bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-slate-300 p-2 rounded-xl text-sm border border-slate-700 flex items-center justify-center w-10 h-10 shadow">
+                <i class="fas fa-pause"></i>
+            </button>
+        </div>
+    </header>
+
+    <main class="relative flex-1 w-full max-w-md flex justify-center items-center gap-2 my-1">
+        
+        <!-- 左パネル：スコア・情報 -->
+        <div class="flex flex-col gap-2.5 justify-start items-center h-full max-h-[480px] py-1">
+            <div class="bg-slate-900/80 border border-slate-800 p-2.5 rounded-2xl w-22 text-center shadow-md">
+                <div class="text-[10px] text-slate-400 font-extrabold tracking-wider">SCORE</div>
+                <div id="scoreText" class="text-base font-black text-amber-400 truncate">0</div>
+            </div>
+
+            <div class="bg-slate-900/80 border border-slate-800 p-2 rounded-2xl w-22 text-center shadow-md">
+                <div class="text-[9px] text-slate-400 font-extrabold tracking-wider">HIGH</div>
+                <div id="highScoreText" class="text-xs font-bold text-amber-200/80 truncate">0</div>
+            </div>
+
+            <div class="bg-slate-900/80 border border-slate-800 p-2 rounded-2xl w-22 text-center shadow-md">
+                <div class="text-[9px] text-slate-400 font-extrabold tracking-wider">MAX CHAIN</div>
+                <div id="maxChainText" class="text-xs font-black text-pink-400">0</div>
+            </div>
+        </div>
+
+        <!-- 中央：メインゲームキャンバス -->
+        <div class="relative flex justify-center items-center">
+            <canvas id="gameCanvas" width="240" height="480"></canvas>
+
+            <!-- 連鎖ポップアップ表示領域 -->
+            <div id="chainDisplay" class="absolute inset-0 pointer-events-none flex items-center justify-center hidden">
+                <span id="chainText" class="text-3xl md:text-4xl font-black text-yellow-300 drop-shadow-[0_4px_8px_rgba(0,0,0,0.9)] chain-anim">
+                    1 連鎖!
+                </span>
+            </div>
+
+            <!-- スタート / ポーズ / ゲームオーバー オーバーレイ -->
+            <div id="overlay" class="absolute inset-0 bg-slate-950/85 backdrop-blur-md rounded-2xl flex flex-col justify-center items-center p-6 text-center z-20">
+                <div class="text-4xl mb-2">💎✨</div>
+                <h2 id="overlayTitle" class="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-pink-400 to-purple-400 mb-1">
+                    ジェムパズル
+                </h2>
+                <p id="overlaySub" class="text-xs text-slate-300 mb-6 leading-relaxed">
+                    同じ色のジェムを <span class="text-amber-300 font-bold">4つ以上</span> つなげて消そう！<br>連鎖を起こしてハイスコアを目指そう！
+                </p>
+                <button id="startBtn" class="btn-push bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-600 hover:to-purple-700 text-white font-black py-3 px-8 rounded-2xl shadow-lg shadow-pink-500/25 text-base border border-pink-400">
+                    ゲームスタート
+                </button>
+            </div>
+        </div>
+
+        <!-- 右パネル：NEXT表示 -->
+        <div class="flex flex-col gap-3 justify-start items-center h-full max-h-[480px] py-1">
+            <div class="bg-slate-900/80 border border-slate-800 p-2.5 rounded-2xl w-20 text-center shadow-md flex flex-col items-center">
+                <div class="text-[10px] text-slate-400 font-extrabold mb-1.5 tracking-wider">NEXT</div>
+                <canvas id="nextCanvas" width="50" height="100" class="bg-slate-950/60 rounded-xl"></canvas>
+            </div>
+        </div>
+    </main>
+
+    <footer class="w-full max-w-md pb-2 pt-1 px-2 z-10">
+        <div class="grid grid-cols-5 gap-1.5 max-w-xs mx-auto">
+            <button id="btnLeft" class="btn-push bg-slate-800 active:bg-slate-700 text-slate-200 p-3 rounded-2xl border border-slate-700 text-lg flex items-center justify-center shadow touch-none">
+                <i class="fas fa-arrow-left"></i>
+            </button>
+            <button id="btnRight" class="btn-push bg-slate-800 active:bg-slate-700 text-slate-200 p-3 rounded-2xl border border-slate-700 text-lg flex items-center justify-center shadow touch-none">
+                <i class="fas fa-arrow-right"></i>
+            </button>
+            <button id="btnRotateCCW" class="btn-push bg-indigo-700 active:bg-indigo-600 text-white p-3 rounded-2xl border border-indigo-500 text-lg flex items-center justify-center shadow touch-none">
+                <i class="fas fa-undo"></i>
+            </button>
+            <button id="btnRotateCW" class="btn-push bg-purple-700 active:bg-purple-600 text-white p-3 rounded-2xl border border-purple-500 text-lg flex items-center justify-center shadow touch-none">
+                <i class="fas fa-redo"></i>
+            </button>
+            <button id="btnDown" class="btn-push bg-rose-700 active:bg-rose-600 text-white p-3 rounded-2xl border border-rose-500 text-lg flex items-center justify-center shadow touch-none">
+                <i class="fas fa-arrow-down"></i>
+            </button>
+        </div>
+        <div class="text-center text-[10px] text-slate-500 mt-1.5">
+            [←/→] 移動 | [Z/X, ↑] 回転 | [↓] 落下 | [Space] 瞬間落下
+        </div>
+    </footer>
+
+    <script>
+        // --- サウンドエンジン (Tone.js) ---
+        let audioEnabled = true;
+        let audioInitialized = false;
+
+        const synth = new Tone.Synth({
+            oscillator: { type: "triangle" },
+            envelope: { attack: 0.005, decay: 0.1, sustain: 0, release: 0.1 }
+        }).toDestination();
+
+        const popSynth = new Tone.PolySynth(Tone.Synth, {
+            oscillator: { type: "sine" },
+            envelope: { attack: 0.01, decay: 0.15, sustain: 0.05, release: 0.15 }
+        }).toDestination();
+
+        const chainScale = ["C4", "E4", "G4", "B4", "C5", "E5", "G5", "C6"];
+
+        async function initAudio() {
+            if (!audioInitialized) {
+                await Tone.start();
+                audioInitialized = true;
+            }
+        }
+
+        function playSFX(type, param = 1) {
+            if (!audioEnabled || !audioInitialized) return;
+            try {
+                if (type === 'move') {
+                    synth.triggerAttackRelease("C3", "32n");
+                } else if (type === 'rotate') {
+                    synth.triggerAttackRelease("E3", "32n");
+                } else if (type === 'drop') {
+                    synth.triggerAttackRelease("G2", "16n");
+                } else if (type === 'match') {
+                    const idx = Math.min(param - 1, chainScale.length - 1);
+                    const note = chainScale[idx];
+                    popSynth.triggerAttackRelease([note, Tone.Frequency(note).transpose(4)], "8n");
+                } else if (type === 'gameover') {
+                    popSynth.triggerAttackRelease(["C3", "D#3", "F#3"], "4n");
+                }
+            } catch (e) {
+                console.warn("Audio play issue:", e);
+            }
+        }
+
+        // --- STREAMING_CHUNK:Configuring board constants and color themes... ---
+        const COLS = 6;
+        const VISIBLE_ROWS = 12;
+        const HIDDEN_ROWS = 2;
+        const TOTAL_ROWS = VISIBLE_ROWS + HIDDEN_ROWS;
+        const CELL_SIZE = 40; // 240 / 6 = 40px
+
+        // ジェムの色とビジュアル定義
+        const GEM_TYPES = [
+            null, // 0: 空白
+            { id: 1, name: 'ruby', main: '#f43f5e', light: '#fda4af', dark: '#9f1239' },   // 赤
+            { id: 2, name: 'sapphire', main: '#3b82f6', light: '#93c5fd', dark: '#1e3a8a' }, // 青
+            { id: 3, name: 'emerald', main: '#10b981', light: '#6ee7b7', dark: '#065f46' },  // 緑
+            { id: 4, name: 'topaz', main: '#f59e0b', light: '#fde68a', dark: '#78350f' }     // 黄
+        ];
+        const COLOR_NUM = 4;
+
+        // 回転のオフセット(軸ジェムに対する相手ジェムの相対位置: 0:上, 1:右, 2:下, 3:左)
+        const ROT_OFFSETS = [
+            { dx: 0, dy: -1 }, // 0: 上
+            { dx: 1, dy: 0 },  // 1: 右
+            { dx: 0, dy: 1 },  // 2: 下
+            { dx: -1, dy: 0 }  // 3: 左
+        ];
+
+        // --- STREAMING_CHUNK:Initializing state variables... ---
+        let grid = Array.from({ length: TOTAL_ROWS }, () => Array(COLS).fill(0));
+        let activePiece = null; // { x, y, rot, color1, color2 } (x,yは軸ジェム)
+        let nextPiece = null;
+
+        let score = 0;
+        let highScore = parseInt(localStorage.getItem('gem_puzzle_highscore') || '0', 10);
+        let maxChain = 0;
+        let currentChain = 0;
+
+        let gameState = 'START'; // START, PLAYING, DROP_ANIM, POP_ANIM, GAMEOVER, PAUSED
+        let dropTimer = 0;
+        let dropSpeed = 700; // ms
+        let lastTime = 0;
+
+        let popAnimationState = null; // { groups: [], timer: 0 }
+
+        // 要素参照
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const nextCanvas = document.getElementById('nextCanvas');
+        const nextCtx = nextCanvas.getContext('2d');
+
+        const scoreText = document.getElementById('scoreText');
+        const highScoreText = document.getElementById('highScoreText');
+        const maxChainText = document.getElementById('maxChainText');
+        const overlay = document.getElementById('overlay');
+        const overlayTitle = document.getElementById('overlayTitle');
+        const overlaySub = document.getElementById('overlaySub');
+        const startBtn = document.getElementById('startBtn');
+        const chainDisplay = document.getElementById('chainDisplay');
+        const chainText = document.getElementById('chainText');
+        const soundToggleBtn = document.getElementById('soundToggleBtn');
+        const soundIcon = document.getElementById('soundIcon');
+        const pauseBtn = document.getElementById('pauseBtn');
+
+        highScoreText.textContent = highScore;
+
+        // --- STREAMING_CHUNK:Creating piece and helper generators... ---
+        function createRandomPiece() {
+            return {
+                x: 2,
+                y: 1, // 画面上の隠れ領域からスタート
+                rot: 0, // 上に相手ジェム
+                color1: Math.floor(Math.random() * COLOR_NUM) + 1, // 軸
+                color2: Math.floor(Math.random() * COLOR_NUM) + 1  // 子
+            };
+        }
+
+        // 盤面の特定のセルが埋まっているかチェック
+        function isOccupied(gx, gy) {
+            if (gx < 0 || gx >= COLS || gy >= TOTAL_ROWS) return true;
+            if (gy < 0) return false; // 盤面上の画面外はみ出しは許可
+            return grid[gy][gx] !== 0;
+        }
+
+        // アクティブなピースの位置妥当性判定
+        function isValidPosition(p) {
+            // 軸ジェム
+            if (isOccupied(p.x, p.y)) return false;
+            // 子ジェム
+            const off = ROT_OFFSETS[p.rot];
+            const cx = p.x + off.dx;
+            const cy = p.y + off.dy;
+            if (isOccupied(cx, cy)) return false;
+            return true;
+        }
+
+        // --- STREAMING_CHUNK:Handling piece actions and movement... ---
+        function moveLeft() {
+            if (gameState !== 'PLAYING' || !activePiece) return;
+            const testP = { ...activePiece, x: activePiece.x - 1 };
+            if (isValidPosition(testP)) {
+                activePiece.x--;
+                playSFX('move');
+                draw();
+            }
+        }
+
+        function moveRight() {
+            if (gameState !== 'PLAYING' || !activePiece) return;
+            const testP = { ...activePiece, x: activePiece.x + 1 };
+            if (isValidPosition(testP)) {
+                activePiece.x++;
+                playSFX('move');
+                draw();
+            }
+        }
+
+        function rotateCW() {
+            if (gameState !== 'PLAYING' || !activePiece) return;
+            const nextRot = (activePiece.rot + 1) % 4;
+            let testP = { ...activePiece, rot: nextRot };
+
+            // 壁蹴り判定 (左右・下のめり込み防止)
+            if (!isValidPosition(testP)) {
+                // 左にズラしてみる
+                testP.x--;
+                if (!isValidPosition(testP)) {
+                    // 右にズラしてみる
+                    testP.x += 2;
+                    if (!isValidPosition(testP)) {
+                        // 上にズラしてみる
+                        testP.x--;
+                        testP.y--;
+                        if (!isValidPosition(testP)) return; // 回転不可
+                    }
+                }
+            }
+
+            activePiece.x = testP.x;
+            activePiece.y = testP.y;
+            activePiece.rot = testP.rot;
+            playSFX('rotate');
+            draw();
+        }
+
+        function rotateCCW() {
+            if (gameState !== 'PLAYING' || !activePiece) return;
+            const nextRot = (activePiece.rot + 3) % 4;
+            let testP = { ...activePiece, rot: nextRot };
+
+            if (!isValidPosition(testP)) {
+                testP.x--;
+                if (!isValidPosition(testP)) {
+                    testP.x += 2;
+                    if (!isValidPosition(testP)) {
+                        testP.x--;
+                        testP.y--;
+                        if (!isValidPosition(testP)) return;
+                    }
+                }
+            }
+
+            activePiece.x = testP.x;
+            activePiece.y = testP.y;
+            activePiece.rot = testP.rot;
+            playSFX('rotate');
+            draw();
+        }
+
+        function softDrop() {
+            if (gameState !== 'PLAYING' || !activePiece) return;
+            const testP = { ...activePiece, y: activePiece.y + 1 };
+            if (isValidPosition(testP)) {
+                activePiece.y++;
+                score += 1;
+                scoreText.textContent = score;
+                playSFX('move');
+                dropTimer = 0;
+                draw();
+            } else {
+                lockPiece();
+            }
+        }
+
+        function hardDrop() {
+            if (gameState !== 'PLAYING' || !activePiece) return;
+            let addedScore = 0;
+            while (true) {
+                const testP = { ...activePiece, y: activePiece.y + 1 };
+                if (isValidPosition(testP)) {
+                    activePiece.y++;
+                    addedScore += 2;
+                } else {
+                    break;
+                }
+            }
+            score += addedScore;
+            scoreText.textContent = score;
+            playSFX('drop');
+            lockPiece();
+        }
+
+        // --- STREAMING_CHUNK:Implementing piece locking and gravity logic... ---
+        function lockPiece() {
+            const off = ROT_OFFSETS[activePiece.rot];
+            const cx = activePiece.x + off.dx;
+            const cy = activePiece.y + off.dy;
+
+            if (activePiece.y >= 0 && activePiece.y < TOTAL_ROWS) {
+                grid[activePiece.y][activePiece.x] = activePiece.color1;
+            }
+            if (cy >= 0 && cy < TOTAL_ROWS) {
+                grid[cy][cx] = activePiece.color2;
+            }
+
+            activePiece = null;
+            currentChain = 0;
+            applyGravityAndCheckMatches();
+        }
+
+        // 浮いているジェムを落下させる
+        function applyGravity() {
+            let moved = false;
+            for (let x = 0; x < COLS; x++) {
+                for (let y = TOTAL_ROWS - 2; y >= 0; y--) {
+                    if (grid[y][x] !== 0 && grid[y + 1][x] === 0) {
+                        grid[y + 1][x] = grid[y][x];
+                        grid[y][x] = 0;
+                        moved = true;
+                    }
+                }
+            }
+            return moved;
+        }
+
+        // --- STREAMING_CHUNK:Matching and chain resolution engine... ---
+        function findConnectedMatches() {
+            const visited = Array.from({ length: TOTAL_ROWS }, () => Array(COLS).fill(false));
+            const matchedCoords = [];
+
+            for (let y = 0; y < TOTAL_ROWS; y++) {
+                for (let x = 0; x < COLS; x++) {
+                    const color = grid[y][x];
+                    if (color > 0 && !visited[y][x]) {
+                        // BFS/DFSで同色連結を収集
+                        const group = [];
+                        const queue = [{ x, y }];
+                        visited[y][x] = true;
+
+                        while (queue.length > 0) {
+                            const curr = queue.shift();
+                            group.push(curr);
+
+                            const dirs = [{ x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 }];
+                            for (const d of dirs) {
+                                const nx = curr.x + d.x;
+                                const ny = curr.y + d.y;
+                                if (nx >= 0 && nx < COLS && ny >= 0 && ny < TOTAL_ROWS) {
+                                    if (!visited[ny][nx] && grid[ny][nx] === color) {
+                                        visited[ny][nx] = true;
+                                        queue.push({ x: nx, y: ny });
+                                    }
+                                }
+                            }
+                        }
+
+                        if (group.length >= 4) {
+                            matchedCoords.push(...group);
+                        }
+                    }
+                }
+            }
+            return matchedCoords;
+        }
+
+        function applyGravityAndCheckMatches() {
+            // 重力を適用（一度完全に落とす）
+            let falling = true;
+            while (falling) {
+                falling = applyGravity();
+            }
+
+            // 4連結以上のマッチ判定
+            const matches = findConnectedMatches();
+
+            if (matches.length > 0) {
+                currentChain++;
+                if (currentChain > maxChain) {
+                    maxChain = currentChain;
+                    maxChainText.textContent = maxChain;
+                }
+
+                // スコア計算: 消去数 * 10 * 連鎖倍率
+                const basePoints = matches.length * 10;
+                const chainBonus = Math.pow(2, currentChain - 1);
+                score += basePoints * chainBonus;
+                scoreText.textContent = score;
+
+                // 連鎖演出サウンド & ポップアップ
+                playSFX('match', currentChain);
+                showChainPopup(currentChain);
+
+                // アニメーション用に消去用ステートに引き渡し
+                gameState = 'POP_ANIM';
+                popAnimationState = {
+                    coords: matches,
+                    timer: 0,
+                    maxTime: 250 // ms
+                };
+            } else {
+                // 連鎖終了、新しいピースを出現
+                spawnNextPiece();
+            }
+        }
+
+        function showChainPopup(count) {
+            chainText.textContent = `${count} 連鎖!`;
+            chainDisplay.classList.remove('hidden');
+            // CSS アニメーション再適用
+            chainText.classList.remove('chain-anim');
+            void chainText.offsetWidth; // reflow
+            chainText.classList.add('chain-anim');
+
+            setTimeout(() => {
+                if (gameState !== 'POP_ANIM') {
+                    chainDisplay.classList.add('hidden');
+                }
+            }, 800);
+        }
+
+        function spawnNextPiece() {
+            activePiece = nextPiece || createRandomPiece();
+            nextPiece = createRandomPiece();
+            drawNextPiece();
+
+            // 敗北条件判定: 軸ジェムが配置不可能か
+            if (!isValidPosition(activePiece)) {
+                triggerGameOver();
+                return;
+            }
+
+            gameState = 'PLAYING';
+            dropTimer = 0;
+            draw();
+        }
+
+        function triggerGameOver() {
+            gameState = 'GAMEOVER';
+            playSFX('gameover');
+
+            if (score > highScore) {
+                highScore = score;
+                localStorage.setItem('gem_puzzle_highscore', highScore);
+                highScoreText.textContent = highScore;
+            }
+
+            overlayTitle.textContent = "GAME OVER";
+            overlayTitle.className = "text-2xl font-black text-rose-500 mb-1";
+            overlaySub.innerHTML = `スコア: <span class="text-yellow-300 font-bold text-lg">${score}</span><br>最大連鎖: <span class="text-pink-400 font-bold">${maxChain} 連鎖</span>`;
+            startBtn.textContent = "もう一度プレイ";
+            overlay.classList.remove('hidden');
+        }
+
+        // --- STREAMING_CHUNK:Rendering canvas graphics... ---
+        function drawGem(cCtx, x, y, colorId, size = CELL_SIZE, isGhost = false, scale = 1) {
+            if (!colorId || colorId <= 0) return;
+            const gem = GEM_TYPES[colorId];
+            if (!gem) return;
+
+            cCtx.save();
+            cCtx.translate(x + size / 2, y + size / 2);
+            cCtx.scale(scale, scale);
+
+            const r = (size / 2) - 2;
+
+            if (isGhost) {
+                cCtx.globalAlpha = 0.3;
+            }
+
+            // 外周シャドウ・ベース
+            cCtx.beginPath();
+            cCtx.arc(0, 0, r, 0, Math.PI * 2);
+            cCtx.fillStyle = gem.main;
+            cCtx.fill();
+
+            // グラデーションツヤ
+            const grad = cCtx.createRadialGradient(-r * 0.3, -r * 0.3, r * 0.1, 0, 0, r);
+            grad.addColorStop(0, gem.light);
+            grad.addColorStop(0.7, gem.main);
+            grad.addColorStop(1, gem.dark);
+
+            cCtx.beginPath();
+            cCtx.arc(0, 0, r, 0, Math.PI * 2);
+            cCtx.fillStyle = grad;
+            cCtx.fill();
+
+            // 内側の光のハイライト
+            cCtx.beginPath();
+            cCtx.ellipse(-r * 0.35, -r * 0.35, r * 0.35, r * 0.2, -Math.PI / 4, 0, Math.PI * 2);
+            cCtx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+            cCtx.fill();
+
+            // ぷにっとした目線のアクセント（可愛い顔）
+            if (!isGhost) {
+                cCtx.fillStyle = 'rgba(15, 23, 42, 0.8)';
+                cCtx.beginPath();
+                cCtx.arc(-r * 0.25, r * 0.05, r * 0.12, 0, Math.PI * 2);
+                cCtx.arc(r * 0.25, r * 0.05, r * 0.12, 0, Math.PI * 2);
+                cCtx.fill();
+
+                // 瞳の白光
+                cCtx.fillStyle = '#ffffff';
+                cCtx.beginPath();
+                cCtx.arc(-r * 0.22, -r * 0.02, r * 0.04, 0, Math.PI * 2);
+                cCtx.arc(r * 0.28, -r * 0.02, r * 0.04, 0, Math.PI * 2);
+                cCtx.fill();
+            }
+
+            cCtx.restore();
+        }
+
+        function drawNextPiece() {
+            nextCtx.clearRect(0, 0, nextCanvas.width, nextCanvas.height);
+            if (!nextPiece) return;
+
+            const size = 22;
+            const startX = 14;
+            const startY = 15;
+
+            // 子（上）
+            drawGem(nextCtx, startX, startY, nextPiece.color2, size);
+            // 軸（下）
+            drawGem(nextCtx, startX, startY + size + 6, nextPiece.color1, size);
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 格子ガイド（微かに見える背景線）
+            ctx.strokeStyle = 'rgba(51, 65, 85, 0.25)';
+            ctx.lineWidth = 1;
+            for (let x = 0; x <= COLS; x++) {
+                ctx.beginPath();
+                ctx.moveTo(x * CELL_SIZE, 0);
+                ctx.lineTo(x * CELL_SIZE, VISIBLE_ROWS * CELL_SIZE);
+                ctx.stroke();
+            }
+            for (let y = 0; y <= VISIBLE_ROWS; y++) {
+                ctx.beginPath();
+                ctx.moveTo(0, y * CELL_SIZE);
+                ctx.lineTo(COLS * CELL_SIZE, y * CELL_SIZE);
+                ctx.stroke();
+            }
+
+            // 固定された盤面の描画（VISIBLE_ROWS以降を描画）
+            for (let y = HIDDEN_ROWS; y < TOTAL_ROWS; y++) {
+                for (let x = 0; x < COLS; x++) {
+                    const color = grid[y][x];
+                    if (color > 0) {
+                        const drawY = (y - HIDDEN_ROWS) * CELL_SIZE;
+                        drawGem(ctx, x * CELL_SIZE, drawY, color);
+                    }
+                }
+            }
+
+            // アクティブな操作ピース描画
+            if (activePiece && gameState === 'PLAYING') {
+                // ゴースト（落下予測位置）の算出
+                let ghostY = activePiece.y;
+                while (true) {
+                    const testP = { ...activePiece, y: ghostY + 1 };
+                    if (isValidPosition(testP)) {
+                        ghostY++;
+                    } else {
+                        break;
+                    }
+                }
+
+                const off = ROT_OFFSETS[activePiece.rot];
+
+                // ゴースト描画
+                if (ghostY !== activePiece.y) {
+                    const gDrawY1 = (ghostY - HIDDEN_ROWS) * CELL_SIZE;
+                    const gDrawY2 = (ghostY + off.dy - HIDDEN_ROWS) * CELL_SIZE;
+                    if (ghostY >= HIDDEN_ROWS) drawGem(ctx, activePiece.x * CELL_SIZE, gDrawY1, activePiece.color1, CELL_SIZE, true);
+                    if (ghostY + off.dy >= HIDDEN_ROWS) drawGem(ctx, (activePiece.x + off.dx) * CELL_SIZE, gDrawY2, activePiece.color2, CELL_SIZE, true);
+                }
+
+                // 実体ピース描画
+                const drawY1 = (activePiece.y - HIDDEN_ROWS) * CELL_SIZE;
+                const drawY2 = (activePiece.y + off.dy - HIDDEN_ROWS) * CELL_SIZE;
+
+                if (activePiece.y >= HIDDEN_ROWS) {
+                    drawGem(ctx, activePiece.x * CELL_SIZE, drawY1, activePiece.color1);
+                }
+                if (activePiece.y + off.dy >= HIDDEN_ROWS) {
+                    drawGem(ctx, (activePiece.x + off.dx) * CELL_SIZE, drawY2, activePiece.color2);
+                }
+            }
+
+            // 消去ポップアニメーション中のエフェクト描画
+            if (gameState === 'POP_ANIM' && popAnimationState) {
+                const progress = popAnimationState.timer / popAnimationState.maxTime;
+                const scale = 1 + progress * 0.3; // 拡大縮小して消える
+                ctx.save();
+                ctx.globalAlpha = Math.max(0, 1 - progress);
+
+                for (const coord of popAnimationState.coords) {
+                    if (coord.y >= HIDDEN_ROWS) {
+                        const px = coord.x * CELL_SIZE;
+                        const py = (coord.y - HIDDEN_ROWS) * CELL_SIZE;
+                        const color = grid[coord.y][coord.x];
+                        drawGem(ctx, px, py, color, CELL_SIZE, false, scale);
+                    }
+                }
+                ctx.restore();
+            }
+        }
+
+        // --- STREAMING_CHUNK:Main game update loop... ---
+        function update(deltaTime) {
+            if (gameState === 'PLAYING') {
+                dropTimer += deltaTime;
+                if (dropTimer >= dropSpeed) {
+                    dropTimer = 0;
+                    const testP = { ...activePiece, y: activePiece.y + 1 };
+                    if (isValidPosition(testP)) {
+                        activePiece.y++;
+                    } else {
+                        lockPiece();
+                    }
+                }
+            } else if (gameState === 'POP_ANIM' && popAnimationState) {
+                popAnimationState.timer += deltaTime;
+                if (popAnimationState.timer >= popAnimationState.maxTime) {
+                    // 実際にマスを消去
+                    for (const coord of popAnimationState.coords) {
+                        grid[coord.y][coord.x] = 0;
+                    }
+                    popAnimationState = null;
+                    // 連鎖継続のために再度落下&判定
+                    applyGravityAndCheckMatches();
+                }
+            }
+        }
+
+        function gameLoop(time) {
+            const deltaTime = time - lastTime;
+            lastTime = time;
+
+            if (gameState !== 'PAUSED') {
+                update(deltaTime);
+                draw();
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // --- STREAMING_CHUNK:Attaching event handlers and control bindings... ---
+        function startGame() {
+            initAudio();
+            grid = Array.from({ length: TOTAL_ROWS }, () => Array(COLS).fill(0));
+            score = 0;
+            maxChain = 0;
+            scoreText.textContent = "0";
+            maxChainText.textContent = "0";
+            chainDisplay.classList.add('hidden');
+            overlay.classList.add('hidden');
+
+            nextPiece = createRandomPiece();
+            spawnNextPiece();
+        }
+
+        // キーボード入力 listener
+        window.addEventListener('keydown', (e) => {
+            if (gameState !== 'PLAYING') return;
+
+            switch (e.key) {
+                case 'ArrowLeft':
+                    moveLeft();
+                    break;
+                case 'ArrowRight':
+                    moveRight();
+                    break;
+                case 'ArrowDown':
+                    softDrop();
+                    break;
+                case 'ArrowUp':
+                case 'x':
+                case 'X':
+                    rotateCW();
+                    break;
+                case 'z':
+                case 'Z':
+                    rotateCCW();
+                    break;
+                case ' ':
+                    hardDrop();
+                    break;
+            }
+        });
+
+        // ボタン・タッチ入力 listener
+        document.getElementById('btnLeft').addEventListener('pointerdown', (e) => { e.preventDefault(); moveLeft(); });
+        document.getElementById('btnRight').addEventListener('pointerdown', (e) => { e.preventDefault(); moveRight(); });
+        document.getElementById('btnRotateCW').addEventListener('pointerdown', (e) => { e.preventDefault(); rotateCW(); });
+        document.getElementById('btnRotateCCW').addEventListener('pointerdown', (e) => { e.preventDefault(); rotateCCW(); });
+        document.getElementById('btnDown').addEventListener('pointerdown', (e) => { e.preventDefault(); softDrop(); });
+
+        startBtn.addEventListener('click', startGame);
+
+        soundToggleBtn.addEventListener('click', () => {
+            audioEnabled = !audioEnabled;
+            soundIcon.className = audioEnabled ? "fas fa-volume-up" : "fas fa-volume-mute";
+        });
+
+        pauseBtn.addEventListener('click', () => {
+            if (gameState === 'PLAYING') {
+                gameState = 'PAUSED';
+                overlayTitle.textContent = "PAUSED";
+                overlayTitle.className = "text-2xl font-black text-amber-400 mb-1";
+                overlaySub.textContent = "一時停止中です";
+                startBtn.textContent = "再開する";
+                overlay.classList.remove('hidden');
+            } else if (gameState === 'PAUSED') {
+                gameState = 'PLAYING';
+                overlay.classList.add('hidden');
+            }
+        });
+
+        // アニメーションループ開始
+        requestAnimationFrame((t) => {
+            lastTime = t;
+            gameLoop(t);
+        });
+    </script>
+</body>
+</html>
